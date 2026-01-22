@@ -53,20 +53,22 @@ Copy and configure `.env`:
 cp .env.example .env
 ```
 
-Edit `.env` with your wallet details:
+Edit `.env` with your wallet details and private keys:
 
 ```env
-WALLET_A_PUBLIC_KEY=8oqK9tb7QREwG9w3JRZuvWvaS9K7YBtyY2eeCBVEQXmV
-WALLET_A_PRIVATE_KEY=3ZHwU8srDpYcdUDDSKsHf5oubqUb3KXxiDCKnuhP3eaL9Tc3RAP98zqgX86qc5HFWAzoMnEsyrLDpAg8LL7hvFLf
+WALLET_A_PUBLIC_KEY=<your-wallet-a-public-key>
+WALLET_A_PRIVATE_KEY=<your-wallet-a-private-key>
 
-WALLET_B_PUBLIC_KEY=4hzk4sSocyaN9wN8vmZsceby5CGhH363szdq1LNEfmVH
-WALLET_B_PRIVATE_KEY=27gBFDUd1GTqngmYCipjSAyuZPLtrcfWxwVnNdsonezoQKbPFntfrQATjqLCRjmh2a7ZzKmB2RgxMWpJ7t1jsJMV
+WALLET_B_PUBLIC_KEY=<your-wallet-b-public-key>
+WALLET_B_PRIVATE_KEY=<your-wallet-b-private-key>
 
 RPC_ENDPOINT=https://api.devnet.solana.com
 SOL_TRANSFER_AMOUNT_LAMPORTS=1000000
 TOKEN_TRANSFER_AMOUNT=1000000
 TOKEN_MINT_ADDRESS=<your-token-mint>
 ```
+
+⚠️ **Security:** Never commit `.env` to version control. It's automatically ignored by `.gitignore`.
 
 ### 3. Verify Configuration
 
