@@ -91,6 +91,17 @@ class TransactionBuilder {
 
     // Add accounts from all instructions
     for (const instruction of this.instructions) {
+      // Add program ID to accounts
+      if (!accountSet.has(instruction.programId)) {
+        accountSet.set(instruction.programId, {
+          pubkey: instruction.programId,
+          pubkeyBytes: instruction.programIdBytes,
+          isSigner: false,
+          isWritable: false,
+        });
+      }
+
+      // Add instruction accounts
       for (const account of instruction.accounts) {
         if (!accountSet.has(account.pubkey)) {
           accountSet.set(account.pubkey, {
@@ -151,6 +162,12 @@ class TransactionBuilder {
     instructionsEncoder.writeU8(this.instructions.length);
 
     for (const instruction of this.instructions) {
+      // Find program index
+      const programIndex = accounts.findIndex(a => a.pubkey === instruction.programId);
+      if (programIndex === -1) {
+        throw new Error(`Program ${instruction.programId} not found in transaction accounts`);
+      }
+
       // Find account indices
       const accountIndices = instruction.accounts.map(acc => {
         const index = accounts.findIndex(a => a.pubkey === acc.pubkey);
@@ -160,18 +177,12 @@ class TransactionBuilder {
         return index;
       });
 
-      // Encode instruction
-      instructionsEncoder.writeU8(instruction.accounts.length); // num accounts
+      // Encode instruction: [program_id_index][num_accounts][account_indices...][data_length][data...]
+      instructionsEncoder.writeU8(programIndex);
+      instructionsEncoder.writeU8(accountIndices.length); // num accounts
       for (const idx of accountIndices) {
         instructionsEncoder.writeU8(idx);
       }
-
-      // Find program index
-      const programIndex = accounts.findIndex(a => a.pubkey === instruction.programId);
-      if (programIndex === -1) {
-        throw new Error(`Program ${instruction.programId} not found in transaction accounts`);
-      }
-      instructionsEncoder.writeU8(programIndex);
 
       // Instruction data
       instructionsEncoder.writeU32(instruction.data.length);
@@ -215,10 +226,10 @@ class TransactionBuilder {
     console.log('Assembling transaction...');
     const transactionEncoder = new Encoder();
 
-    // Signature count
+    // Signature count (using compact u16 encoding)
     transactionEncoder.writeU8(1); // One signature from fee payer
 
-    // Signature
+    // Signature (64 bytes for Ed25519)
     transactionEncoder.writeBytes(signature);
 
     // Message

@@ -1,41 +1,16 @@
 #!/usr/bin/env node
 
-/**
- * Main execution script: Send all 4 transfer instructions in one transaction
- * 2 SOL transfers + 2 SPL token transfers in a single atomic transaction
- */
-
 const config = require('../config');
 const { importKeypair } = require('../utils/keypair');
 const { createBothSystemTransfers } = require('../instructions/system-transfer');
 const { createBothTokenTransfers } = require('../instructions/token-transfer');
-const TransactionBuilder = require('../transaction/builder');
 const fs = require('fs');
 const path = require('path');
+const { Connection, Keypair, PublicKey, Transaction, SystemProgram, sendAndConfirmTransaction } = require('@solana/web3.js');
+const { TOKEN_PROGRAM_ID, createTransferInstruction } = require('@solana/spl-token');
+const bs58 = require('bs58').default || require('bs58');
 
-async function loadTokenConfig() {
-  const tokenConfigPath = path.join(__dirname, '..', '..', 'token-config.json');
-  
-  if (!fs.existsSync(tokenConfigPath)) {
-    throw new Error(
-      'token-config.json not found. Run: node src/setup/token-setup.js for instructions'
-    );
-  }
-
-  const tokenConfig = JSON.parse(fs.readFileSync(tokenConfigPath, 'utf-8'));
-
-  if (
-    tokenConfig.tokenMint === 'SET_THIS_AFTER_CREATING_TOKEN' ||
-    tokenConfig.walletATokenAccount === 'SET_THIS_AFTER_CREATING_ATA_FOR_WALLET_A' ||
-    tokenConfig.walletBTokenAccount === 'SET_THIS_AFTER_CREATING_ATA_FOR_WALLET_B'
-  ) {
-    throw new Error(
-      'token-config.json not configured. Follow instructions from: node src/setup/token-setup.js'
-    );
-  }
-
-  return tokenConfig;
-}
+const tokenConfigPath = path.join(__dirname, '..', '..', 'token-config.json');
 
 async function main() {
   try {
@@ -51,74 +26,91 @@ async function main() {
 
     // Load token configuration
     console.log('Loading token configuration...');
-    const tokenConfig = await loadTokenConfig();
+    if (!fs.existsSync(tokenConfigPath)) {
+      throw new Error('token-config.json not found. Run: npm run setup first');
+    }
+
+    const tokenConfig = JSON.parse(fs.readFileSync(tokenConfigPath, 'utf-8'));
+
+    if (tokenConfig.status !== 'READY') {
+      throw new Error('Token setup not complete. Run: npm run setup first');
+    }
+
     console.log(`Token Mint: ${tokenConfig.tokenMint}`);
     console.log(`Wallet A Token Account: ${tokenConfig.walletATokenAccount}`);
     console.log(`Wallet B Token Account: ${tokenConfig.walletBTokenAccount}`);
     console.log(`Token Decimals: ${tokenConfig.tokenDecimals}\n`);
 
-    // Import sender keypair for signing
+    // Connect to devnet
+    const connection = new Connection(config.rpcEndpoint, 'confirmed');
+
+    // Import Wallet A keypair
     console.log('Loading sender keypair...');
-    const senderKeypair = importKeypair(config.walletA.privateKey);
-    console.log(`Sender public key loaded: ${senderKeypair.publicKey}\n`);
+    const walletAPrivateKeyBuffer = bs58.decode(config.walletA.privateKey);
+    const walletAKeypair = Keypair.fromSecretKey(walletAPrivateKeyBuffer);
+    
+    console.log(`Sender public key loaded: ${walletAKeypair.publicKey.toString()}\n`);
 
-    // Create SOL transfer instructions
-    console.log('Creating SOL transfer instructions...');
-    const [solTransfer1, solTransfer2] = createBothSystemTransfers(
-      config.walletA.publicKey,
-      config.walletA.publicKey,
-      config.walletB.publicKey,
-      config.transfers.solAmount
+    // Create transaction
+    console.log('Creating transaction with 4 instructions...\n');
+    const transaction = new Transaction();
+
+    // Instruction 1: SOL transfer to Wallet A (self)
+    transaction.add(
+      SystemProgram.transfer({
+        fromPubkey: walletAKeypair.publicKey,
+        toPubkey: walletAKeypair.publicKey,
+        lamports: config.transfers.solAmount,
+      })
     );
-    console.log('SOL transfers created:');
-    console.log(`  1. ${config.walletA.publicKey.substring(0, 8)}... -> ${config.walletA.publicKey.substring(0, 8)}...`);
-    console.log(`  2. ${config.walletA.publicKey.substring(0, 8)}... -> ${config.walletB.publicKey.substring(0, 8)}...\n`);
+    console.log('Instruction 1: SOL transfer to Wallet A');
 
-    // Create SPL token transfer instructions
-    console.log('Creating SPL token transfer instructions...');
-    console.log(`Using real token accounts from token-config.json\n`);
-
-    const [tokenTransfer1, tokenTransfer2] = createBothTokenTransfers(
-      tokenConfig.walletATokenAccount,
-      tokenConfig.walletATokenAccount,
-      tokenConfig.walletBTokenAccount,
-      config.walletA.publicKey,
-      config.transfers.tokenAmount
+    // Instruction 2: SOL transfer to Wallet B
+    transaction.add(
+      SystemProgram.transfer({
+        fromPubkey: walletAKeypair.publicKey,
+        toPubkey: new PublicKey(config.walletB.publicKey),
+        lamports: config.transfers.solAmount,
+      })
     );
-    console.log('Token transfers created:');
-    console.log(`  1. Wallet A token account -> Wallet A token account (transfer to self)`);
-    console.log(`  2. Wallet A token account -> Wallet B token account\n`);
+    console.log('Instruction 2: SOL transfer to Wallet B');
 
-    // Build transaction
-    console.log('Building transaction with all 4 instructions...\n');
-    const txBuilder = new TransactionBuilder(config.rpcEndpoint);
+    // Instruction 3: Token transfer to Wallet A (self)
+    transaction.add(
+      createTransferInstruction(
+        new PublicKey(tokenConfig.walletATokenAccount),
+        new PublicKey(tokenConfig.walletATokenAccount),
+        walletAKeypair.publicKey,
+        config.transfers.tokenAmount
+      )
+    );
+    console.log('Instruction 3: Token transfer to Wallet A');
 
-    txBuilder
-      .setFeePayer(config.walletA.publicKey, senderKeypair.secretKey)
-      .addInstructions([solTransfer1, solTransfer2, tokenTransfer1, tokenTransfer2]);
+    // Instruction 4: Token transfer to Wallet B
+    transaction.add(
+      createTransferInstruction(
+        new PublicKey(tokenConfig.walletATokenAccount),
+        new PublicKey(tokenConfig.walletBTokenAccount),
+        walletAKeypair.publicKey,
+        config.transfers.tokenAmount
+      )
+    );
+    console.log('Instruction 4: Token transfer to Wallet B\n');
 
-    console.log('Instructions added to transaction:');
-    console.log('  1. SOL transfer to Wallet A');
-    console.log('  2. SOL transfer to Wallet B');
-    console.log('  3. Token transfer to Wallet A');
-    console.log('  4. Token transfer to Wallet B\n');
+    console.log('Signing and submitting transaction...\n');
 
-    // Build and submit
-    console.log('Building, signing, and submitting transaction...\n');
-    const result = await txBuilder.buildAndSubmit();
+    // Send and confirm transaction
+    const signature = await sendAndConfirmTransaction(
+      connection,
+      transaction,
+      [walletAKeypair],
+      { commitment: 'confirmed' }
+    );
 
-    if (result.success) {
-      console.log('\nTransaction completed successfully!');
-      console.log(`Signature: ${result.signature}`);
-      console.log(`View on Solana Explorer: https://explorer.solana.com/tx/${result.signature}?cluster=devnet`);
-    } else {
-      console.log('\nTransaction failed:');
-      console.log(`Error: ${result.error || result.message}`);
-      if (result.signature) {
-        console.log(`Signature: ${result.signature}`);
-      }
-      process.exit(1);
-    }
+    console.log('Transaction completed successfully!');
+    console.log(`Signature: ${signature}`);
+    console.log(`View on Solana Explorer: https://explorer.solana.com/tx/${signature}?cluster=devnet\n`);
+
   } catch (err) {
     console.error('Fatal error:', err.message);
     console.error(err.stack);
@@ -127,4 +119,3 @@ async function main() {
 }
 
 main();
-
