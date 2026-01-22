@@ -5,6 +5,7 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
+    "setup": "node src/setup/one-time-setup.js",
     "send": "node src/run/send_all_transfers.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -19,6 +20,10 @@
   "type": "commonjs",
   "dependencies": {
     "tweetnacl": "^1.0.3"
+  },
+  "devDependencies": {
+    "@solana/web3.js": "^1.98.4",
+    "@solana/spl-token": "^0.4.14",
+    "bs58": "^6.0.0"
   }
 }
-
