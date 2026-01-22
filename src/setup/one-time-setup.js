@@ -21,8 +21,8 @@ const fs = require('fs');
 const path = require('path');
 const { Connection, Keypair, PublicKey } = require('@solana/web3.js');
 const { createMint, createAssociatedTokenAccount, mintTo } = require('@solana/spl-token');
+const bs58 = require('bs58').default || require('bs58');
 const config = require('../config');
-const bs58 = require('bs58');
 
 const tokenConfigPath = path.join(__dirname, '..', '..', 'token-config.json');
 
