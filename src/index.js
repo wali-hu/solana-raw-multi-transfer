@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 /**
  * Solana Raw Multi-Transfer
  * Single transaction with 4 native transfer instructions (2 SOL, 2 SPL token)
