@@ -118,10 +118,26 @@ async function confirmTransaction(endpoint, signature, maxRetries = 30) {
   return false;
 }
 
+/**
+ * Check if an account exists on-chain
+ * @param {string} endpoint - RPC endpoint
+ * @param {string} pubkey - Account public key
+ * @returns {Promise<boolean>} - Whether account exists
+ */
+async function accountExists(endpoint, pubkey) {
+  try {
+    const accountInfo = await getAccountInfo(endpoint, pubkey);
+    return accountInfo !== null;
+  } catch (err) {
+    return false;
+  }
+}
+
 module.exports = {
   rpcCall,
   getLatestBlockhash,
   getAccountInfo,
   sendRawTransaction,
   confirmTransaction,
+  accountExists,
 };

@@ -194,10 +194,130 @@ function createBothTokenTransfers(
   return [instruction1, instruction2];
 }
 
+/**
+ * Create an Associated Token Account (ATA) initialization instruction
+ * 
+ * This builds the raw instruction to create an ATA on the blockchain.
+ * The ATA is created via the Associated Token Program, which:
+ * - Derives the ATA address as a PDA
+ * - Allocates rent-exempt account space
+ * - Initializes it as a valid token account
+ * 
+ * Rent Exemption: An account must hold minimum SOL balance to exist without being deleted.
+ * For token accounts, this is typically 2,039,280 lamports (0.00203928 SOL).
+ * The Associated Token Program pays this rent from the fee payer's account.
+ * 
+ * @param {string} payerPubkey - Fee payer who covers rent-exempt deposit (signer)
+ * @param {string} walletOwnerPubkey - Wallet that owns the ATA (not signer for ATA creation)
+ * @param {string} tokenMintPubkey - Token mint address
+ * @returns {object} - Instruction object with programId, accounts, and data
+ * 
+ * Account Layout:
+ * - Payer (signer, writable): Pays for rent exemption
+ * - ATA address (non-signer, writable): New ATA being created
+ * - Wallet owner (non-signer, non-writable): Owner of the ATA
+ * - Mint account (non-signer, non-writable): Token mint metadata
+ * - System Program (non-signer, non-writable): For account creation
+ * - Token Program (non-signer, non-writable): For account initialization
+ */
+function createAssociatedTokenAccountInstruction(
+  payerPubkey,
+  walletOwnerPubkey,
+  tokenMintPubkey
+) {
+  // Constants
+  const ASSOCIATED_TOKEN_PROGRAM_ID = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL';
+  const SYSTEM_PROGRAM_ID = '11111111111111111111111111111111';
+  
+  // Derive the ATA address
+  const ataDerivation = deriveAssociatedTokenAccount(walletOwnerPubkey, tokenMintPubkey);
+  const ataPubkey = ataDerivation.ataAddress;
+  
+  // Convert all public keys to bytes
+  const payerBytes = pubkeyToBytes(payerPubkey);
+  const ataBytes = pubkeyToBytes(ataPubkey);
+  const walletOwnerBytes = pubkeyToBytes(walletOwnerPubkey);
+  const mintBytes = pubkeyToBytes(tokenMintPubkey);
+  const systemProgramBytes = pubkeyToBytes(SYSTEM_PROGRAM_ID);
+  const tokenProgramBytes = pubkeyToBytes(TOKEN_PROGRAM_ID);
+  const atpProgramBytes = pubkeyToBytes(ASSOCIATED_TOKEN_PROGRAM_ID);
+  
+  // ATA creation instruction has no data (empty)
+  const instructionData = Buffer.alloc(0);
+  
+  // Encode account metadata
+  // Payer: signer, writable (pays rent)
+  const payerAccountMeta = encodeAccountMeta(payerBytes, true, true);
+  // ATA: non-signer, writable (being created)
+  const ataAccountMeta = encodeAccountMeta(ataBytes, false, true);
+  // Wallet owner: non-signer, non-writable
+  const walletOwnerAccountMeta = encodeAccountMeta(walletOwnerBytes, false, false);
+  // Mint: non-signer, non-writable
+  const mintAccountMeta = encodeAccountMeta(mintBytes, false, false);
+  // System Program: non-signer, non-writable
+  const systemProgramAccountMeta = encodeAccountMeta(systemProgramBytes, false, false);
+  // Token Program: non-signer, non-writable
+  const tokenProgramAccountMeta = encodeAccountMeta(tokenProgramBytes, false, false);
+  
+  return {
+    programId: ASSOCIATED_TOKEN_PROGRAM_ID,
+    programIdBytes: atpProgramBytes,
+    accounts: [
+      {
+        pubkey: payerPubkey,
+        pubkeyBytes: payerBytes,
+        isSigner: true,
+        isWritable: true,
+        meta: payerAccountMeta,
+      },
+      {
+        pubkey: ataPubkey,
+        pubkeyBytes: ataBytes,
+        isSigner: false,
+        isWritable: true,
+        meta: ataAccountMeta,
+      },
+      {
+        pubkey: walletOwnerPubkey,
+        pubkeyBytes: walletOwnerBytes,
+        isSigner: false,
+        isWritable: false,
+        meta: walletOwnerAccountMeta,
+      },
+      {
+        pubkey: tokenMintPubkey,
+        pubkeyBytes: mintBytes,
+        isSigner: false,
+        isWritable: false,
+        meta: mintAccountMeta,
+      },
+      {
+        pubkey: SYSTEM_PROGRAM_ID,
+        pubkeyBytes: systemProgramBytes,
+        isSigner: false,
+        isWritable: false,
+        meta: systemProgramAccountMeta,
+      },
+      {
+        pubkey: TOKEN_PROGRAM_ID,
+        pubkeyBytes: tokenProgramBytes,
+        isSigner: false,
+        isWritable: false,
+        meta: tokenProgramAccountMeta,
+      },
+    ],
+    data: instructionData,
+    encodedData: instructionData,
+    ataAddress: ataPubkey,
+    bump: ataDerivation.bump,
+  };
+}
+
 module.exports = {
   TOKEN_PROGRAM_ID,
   TRANSFER_INSTRUCTION_OPCODE,
   createTokenTransferInstruction,
   createBothTokenTransfers,
   deriveAssociatedTokenAccount,
+  createAssociatedTokenAccountInstruction,
 };
