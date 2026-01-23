@@ -7,7 +7,8 @@
     "start": "node src/index.js",
     "setup": "node src/setup/one-time-setup.js",
     "send": "node src/run/send_all_transfers.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "send-raw": "node src/run/send_raw_multi_transfer.js",
+    "test": "node src/test/test-ata-derivation.js && node src/test/test-ata-creation.js && node src/test/test-system-transfer.js && node src/test/test-transaction-builder.js"
   },
   "keywords": [
     "solana",
