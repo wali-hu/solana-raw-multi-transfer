@@ -48,11 +48,11 @@ module.exports = {
   },
 
   // Token Mint Address
-  tokenMint: env.TOKEN_MINT_ADDRESS || 'TokenkegQfeZyiNwAJsyFbPVwwQnmRRB5nCFJ7nJVd',
+  tokenMint: env.TOKEN_MINT_ADDRESS || 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
 
   // System Program ID (hardcoded, standard on all Solana clusters)
   systemProgram: '11111111111111111111111111111111',
 
   // Token Program ID (hardcoded, standard on all Solana clusters)
-  tokenProgram: 'TokenkegQfeZyiNwAJsyFbPVwwQnmRRB5nCFJ7nJVd',
+  tokenProgram: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
 };

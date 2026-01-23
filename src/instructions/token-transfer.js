@@ -4,7 +4,7 @@ const { pubkeyToBytes, bytesToPubkey } = require('../utils/keypair');
 /**
  * Token Program constants
  */
-const TOKEN_PROGRAM_ID = 'TokenkegQfeZyiNwAJsyFbPVwwQnmRRB5nCFJ7nJVd';
+const TOKEN_PROGRAM_ID = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 const TRANSFER_INSTRUCTION_OPCODE = 3; // Transfer opcode in Token Program
 
 /**
@@ -17,7 +17,7 @@ const TRANSFER_INSTRUCTION_OPCODE = 3; // Transfer opcode in Token Program
  * @returns {object} - Instruction object with programId, accounts, and data
  * 
  * Format:
- * - Program: Token Program (TokenkegQfeZyiNwAJsyFbPVwwQnmRRB5nCFJ7nJVd)
+ * - Program: Token Program (TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA)
  * - Instruction opcode: 3 (Transfer)
  * - Data: [opcode: u8][amount: u64]
  * - Accounts: [source (writable), destination (writable), owner (signer)]
@@ -108,7 +108,7 @@ function deriveAssociatedTokenAccount(walletPubkey, tokenMintPubkey) {
   const crypto = require('crypto');
   
   // Constants
-  const TOKEN_PROGRAM_ID = 'TokenkegQfeZyiNwAJsyFbPVwwQnmRRB5nCFJ7nJVd';
+  const TOKEN_PROGRAM_ID = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
   const ASSOCIATED_TOKEN_PROGRAM_ID = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL';
   
   // Convert base58 public keys to bytes

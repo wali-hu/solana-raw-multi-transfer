@@ -166,37 +166,58 @@ async function main() {
     
     // Connect to devnet
     const connection = new Connection(config.rpcEndpoint, 'confirmed');
+    const { PublicKey, Keypair } = require('@solana/web3.js');
     
-    // Convert our raw message to SDK format
-    const accountKeys = accounts.map(acc => ({
-      pubkey: new (require('@solana/web3.js').PublicKey)(acc.pubkey),
-      isSigner: acc.isSigner,
-      isWritable: acc.isWritable,
-    }));
+    // Rebuild instructions in SDK format using stored data
+    const sdkInstructions = tx.instructions.map((instr, idx) => {
+      try {
+        // Verify instruction structure
+        if (!instr.accounts || !Array.isArray(instr.accounts)) {
+          console.error(`Instruction ${idx} has invalid accounts:`, instr.accounts);
+          throw new Error(`Instruction ${idx} missing or invalid accounts array`);
+        }
+        
+        return {
+          programId: new PublicKey(instr.programId),
+          keys: instr.accounts.map((acc, accIdx) => {
+            try {
+              if (!acc || !acc.pubkey) {
+                console.error(`Instruction ${idx}, account ${accIdx} missing pubkey:`, acc);
+                throw new Error(`Missing pubkey in account`);
+              }
+              return {
+                pubkey: new PublicKey(acc.pubkey),
+                isSigner: acc.isSigner,
+                isWritable: acc.isWritable,
+              };
+            } catch (e) {
+              console.error(`Error in instruction ${idx}, account ${accIdx}:`);
+              console.error(`  Pubkey: "${acc.pubkey}"`);
+              console.error(`  Type: ${typeof acc.pubkey}`);
+              throw e;
+            }
+          }),
+          data: instr.data,
+        };
+      } catch (e) {
+        console.error(`Error processing instruction ${idx}:`, e.message);
+        throw e;
+      }
+    });
     
     // Create versioned transaction message
     const versionedMessage = new TransactionMessage({
-      payerKey: new (require('@solana/web3.js').PublicKey)(config.walletA.publicKey),
+      payerKey: new PublicKey(config.walletA.publicKey),
       recentBlockhash: tx.recentBlockhash,
-      instructions: tx.instructions.map(instr => ({
-        programId: new (require('@solana/web3.js').PublicKey)(instr.programId),
-        keys: instr.accounts.map(acc => ({
-          pubkey: new (require('@solana/web3.js').PublicKey)(acc.pubkey),
-          isSigner: acc.isSigner,
-          isWritable: acc.isWritable,
-        })),
-        data: instr.data,
-      })),
+      instructions: sdkInstructions,
     }).compileToV0Message();
     
     // Create versioned transaction
     const versionedTx = new VersionedTransaction(versionedMessage);
     
     // Sign with our keypair
-    versionedTx.sign([{
-      publicKey: new (require('@solana/web3.js').PublicKey)(config.walletA.publicKey),
-      secretKey: walletAKeypair.secretKey,
-    }]);
+    const walletKeypair = Keypair.fromSecretKey(walletAKeypair.secretKey);
+    versionedTx.sign([walletKeypair]);
     
     console.log('Versioned transaction created and signed');
     console.log();
