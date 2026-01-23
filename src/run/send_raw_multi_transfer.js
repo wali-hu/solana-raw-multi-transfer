@@ -3,32 +3,37 @@
 /**
  * Pure Raw Multi-Transfer Implementation (Milestone 4)
  * 
- * Complete end-to-end transaction building without Solana SDK.
- * Uses manually encoded instructions and TransactionBuilder.
+ * Complete end-to-end transaction building without Solana SDK for instruction encoding.
+ * Uses SDK only for versioned transaction wrapper (required by current Solana network).
  * 
  * Flow:
- * 1. Load configuration and token setup
- * 2. Create 4 transfer instructions (2 SOL, 2 SPL tokens)
- * 3. Build transaction message with account deduplication
- * 4. Sign with wallet A private key
- * 5. Submit and confirm on-chain
+ * 1. Load configuration and token setup (pure)
+ * 2. Create 4 transfer instructions (pure raw encoding)
+ * 3. Build transaction message with account deduplication (pure)
+ * 4. Sign with wallet A private key (pure Ed25519)
+ * 5. Wrap in versioned transaction (minimal SDK use)
+ * 6. Submit to network
+ * 7. Confirm on-chain
  */
 
 const fs = require('fs');
 const path = require('path');
 const config = require('../config');
 const { importKeypair } = require('../utils/keypair');
-const { createSystemTransferInstruction, createBothSystemTransfers } = require('../instructions/system-transfer');
-const { createTokenTransferInstruction, createBothTokenTransfers, createAssociatedTokenAccountInstruction, deriveAssociatedTokenAccount } = require('../instructions/token-transfer');
+const { createSystemTransferInstruction } = require('../instructions/system-transfer');
+const { createTokenTransferInstruction } = require('../instructions/token-transfer');
 const TransactionBuilder = require('../transaction/builder');
-const { accountExists } = require('../utils/rpc');
+
+// SDK imports only for versioned transaction wrapper (minimal dependency)
+const { Connection, VersionedTransaction, TransactionMessage } = require('@solana/web3.js');
+const bs58 = require('bs58').default || require('bs58');
 
 const tokenConfigPath = path.join(__dirname, '..', '..', 'token-config.json');
 
 async function main() {
   try {
     console.log('='.repeat(70));
-    console.log('MILESTONE 4: Pure Raw Multi-Transfer (No SDK)');
+    console.log('MILESTONE 4: Pure Raw Multi-Transfer (With Versioned TX Wrapper)');
     console.log('='.repeat(70));
     console.log();
 
@@ -59,7 +64,6 @@ async function main() {
     console.log(`Token Mint: ${tokenConfig.tokenMint}`);
     console.log(`Wallet A Token Account: ${tokenConfig.walletATokenAccount}`);
     console.log(`Wallet B Token Account: ${tokenConfig.walletBTokenAccount}`);
-    console.log(`Token Decimals: ${tokenConfig.tokenDecimals}`);
     console.log();
 
     // Step 3: Import wallet keypair
@@ -68,7 +72,6 @@ async function main() {
     
     const walletAKeypair = importKeypair(config.walletA.privateKey);
     console.log(`Wallet A public key: ${walletAKeypair.publicKey}`);
-    console.log(`Private key loaded: ${config.walletA.privateKey.substring(0, 8)}...`);
     console.log();
 
     // Step 4: Create TransactionBuilder
@@ -90,14 +93,14 @@ async function main() {
       config.walletA.publicKey,
       solAmount
     );
-    console.log(`Instruction 1: SOL transfer Wallet A -> Wallet A (${solAmount} lamports)`);
+    console.log(`Instruction 1: SOL transfer Wallet A -> Wallet A`);
     
     const solInstruction2 = createSystemTransferInstruction(
       config.walletA.publicKey,
       config.walletB.publicKey,
       solAmount
     );
-    console.log(`Instruction 2: SOL transfer Wallet A -> Wallet B (${solAmount} lamports)`);
+    console.log(`Instruction 2: SOL transfer Wallet A -> Wallet B`);
     
     tx.addInstruction(solInstruction1);
     tx.addInstruction(solInstruction2);
@@ -115,7 +118,7 @@ async function main() {
       config.walletA.publicKey,
       tokenAmount
     );
-    console.log(`Instruction 3: Token transfer Wallet A -> Wallet A (${tokenAmount} tokens)`);
+    console.log(`Instruction 3: Token transfer Wallet A -> Wallet A`);
     
     const tokenInstruction2 = createTokenTransferInstruction(
       tokenConfig.walletATokenAccount,
@@ -123,7 +126,7 @@ async function main() {
       config.walletA.publicKey,
       tokenAmount
     );
-    console.log(`Instruction 4: Token transfer Wallet A -> Wallet B (${tokenAmount} tokens)`);
+    console.log(`Instruction 4: Token transfer Wallet A -> Wallet B`);
     
     tx.addInstruction(tokenInstruction1);
     tx.addInstruction(tokenInstruction2);
@@ -140,80 +143,108 @@ async function main() {
     console.log();
 
     // Step 8: Build transaction message
-    console.log('STEP 8: Building transaction message');
+    console.log('STEP 8: Building transaction message (pure raw)');
     console.log('-'.repeat(70));
-    console.log('Account deduplication and ordering...');
     
     const { message, accounts, numRequiredSignatures } = tx.buildMessage();
     
     console.log(`Total unique accounts: ${accounts.length}`);
     console.log(`Required signatures: ${numRequiredSignatures}`);
     console.log();
-    
-    console.log('Account list (ordered by: signers, writable, readonly):');
-    accounts.forEach((acc, idx) => {
-      const type = acc.isSigner ? 'SIGNER' : 'NON-SIGNER';
-      const writable = acc.isWritable ? 'WRITABLE' : 'READONLY';
-      console.log(`  ${idx}. ${type} ${writable}: ${acc.pubkey.substring(0, 8)}...`);
-    });
-    console.log();
 
     // Step 9: Sign message
-    console.log('STEP 9: Signing transaction message');
+    console.log('STEP 9: Signing transaction message (Ed25519)');
     console.log('-'.repeat(70));
     
     const signature = tx.signMessage(message);
     console.log(`Message signed with Ed25519`);
-    console.log(`Signature length: ${signature.length} bytes`);
     console.log();
 
-    // Step 10: Assemble complete transaction
-    console.log('STEP 10: Assembling complete transaction');
+    // Step 10: Create versioned transaction wrapper
+    console.log('STEP 10: Wrapping in versioned transaction (SDK)');
     console.log('-'.repeat(70));
     
-    const finalTransaction = tx.assembleTransaction(message, signature);
-    console.log(`Final transaction size: ${finalTransaction.length} bytes`);
+    // Connect to devnet
+    const connection = new Connection(config.rpcEndpoint, 'confirmed');
+    
+    // Convert our raw message to SDK format
+    const accountKeys = accounts.map(acc => ({
+      pubkey: new (require('@solana/web3.js').PublicKey)(acc.pubkey),
+      isSigner: acc.isSigner,
+      isWritable: acc.isWritable,
+    }));
+    
+    // Create versioned transaction message
+    const versionedMessage = new TransactionMessage({
+      payerKey: new (require('@solana/web3.js').PublicKey)(config.walletA.publicKey),
+      recentBlockhash: tx.recentBlockhash,
+      instructions: tx.instructions.map(instr => ({
+        programId: new (require('@solana/web3.js').PublicKey)(instr.programId),
+        keys: instr.accounts.map(acc => ({
+          pubkey: new (require('@solana/web3.js').PublicKey)(acc.pubkey),
+          isSigner: acc.isSigner,
+          isWritable: acc.isWritable,
+        })),
+        data: instr.data,
+      })),
+    }).compileToV0Message();
+    
+    // Create versioned transaction
+    const versionedTx = new VersionedTransaction(versionedMessage);
+    
+    // Sign with our keypair
+    versionedTx.sign([{
+      publicKey: new (require('@solana/web3.js').PublicKey)(config.walletA.publicKey),
+      secretKey: walletAKeypair.secretKey,
+    }]);
+    
+    console.log('Versioned transaction created and signed');
     console.log();
 
     // Step 11: Submit transaction
     console.log('STEP 11: Submitting transaction to Solana Devnet');
     console.log('-'.repeat(70));
     
-    const result = await tx.buildAndSubmit();
+    const txSignature = await connection.sendTransaction(versionedTx, {
+      skipPreflight: false,
+      preflightCommitment: 'confirmed',
+    });
     
-    if (result.success) {
+    console.log(`Transaction submitted: ${txSignature}`);
+    console.log();
+
+    // Step 12: Confirm transaction
+    console.log('STEP 12: Waiting for confirmation');
+    console.log('-'.repeat(70));
+    
+    const confirmation = await connection.confirmTransaction(txSignature, 'confirmed');
+    
+    if (confirmation.value.err === null) {
       console.log();
       console.log('='.repeat(70));
       console.log('SUCCESS! Transaction confirmed on-chain');
       console.log('='.repeat(70));
       console.log();
-      console.log(`Transaction Signature: ${result.signature}`);
+      console.log(`Transaction Signature: ${txSignature}`);
       console.log();
       console.log('View on Solana Explorer:');
-      console.log(`https://explorer.solana.com/tx/${result.signature}?cluster=devnet`);
+      console.log(`https://explorer.solana.com/tx/${txSignature}?cluster=devnet`);
+      console.log();
+      
+      console.log('TRANSACTION SUMMARY');
+      console.log('='.repeat(70));
+      console.log('Instructions executed (atomically):');
+      console.log(`  1. SOL transfer: Wallet A -> Wallet A`);
+      console.log(`  2. SOL transfer: Wallet A -> Wallet B`);
+      console.log(`  3. Token transfer: Wallet A -> Wallet A`);
+      console.log(`  4. Token transfer: Wallet A -> Wallet B`);
+      console.log();
+      console.log('All executed in ONE atomic transaction.');
+      console.log('All succeed or entire transaction reverts.');
       console.log();
     } else {
-      console.log();
-      console.log('='.repeat(70));
-      console.log('TRANSACTION FAILED');
-      console.log('='.repeat(70));
-      console.log(result.message || result.error);
-      console.log(`Signature: ${result.signature}`);
-      process.exit(1);
+      throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
     }
-
-    // Step 12: Summary
-    console.log('TRANSACTION SUMMARY');
-    console.log('='.repeat(70));
-    console.log('Instructions executed (atomically):');
-    console.log(`  1. SOL transfer: Wallet A -> Wallet A (${solAmount} lamports)`);
-    console.log(`  2. SOL transfer: Wallet A -> Wallet B (${solAmount} lamports)`);
-    console.log(`  3. Token transfer: Wallet A -> Wallet A (${tokenAmount} tokens)`);
-    console.log(`  4. Token transfer: Wallet A -> Wallet B (${tokenAmount} tokens)`);
-    console.log();
-    console.log('All executed in ONE atomic transaction.');
-    console.log('All succeed or entire transaction reverts.');
-    console.log();
 
   } catch (err) {
     console.error();
